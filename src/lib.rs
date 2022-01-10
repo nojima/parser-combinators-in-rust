@@ -61,3 +61,16 @@ fn test_lexeme() {
     let parser = lexeme(digits);
     assert_eq!(parser("    123    hello"), Some((123, "    hello")));
 }
+
+pub fn string(target: &'static str) -> impl Parser<()> {
+    generalize_lifetime(move |s| {
+        s.strip_prefix(target).map(|rest| ((), rest))
+    })
+}
+
+#[test]
+fn test_string() {
+    let parser = string("hello");
+    assert_eq!(parser("hello world"), Some(((), " world")));
+    assert_eq!(parser("hell world"), None);
+}
