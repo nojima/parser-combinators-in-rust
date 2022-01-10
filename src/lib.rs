@@ -48,3 +48,16 @@ fn test_character() {
     assert_eq!(parser("no cake"), None);
     assert_eq!(parser(""), None);
 }
+
+// パーサーを受け取って、先頭の空白を読み飛ばすようにしたパーサーを返す
+pub fn lexeme<T>(parser: impl Parser<T>) -> impl Parser<T> {
+    generalize_lifetime(move |s| {
+        parser(s.trim_start())
+    })
+}
+
+#[test]
+fn test_lexeme() {
+    let parser = lexeme(digits);
+    assert_eq!(parser("    123    hello"), Some((123, "    hello")));
+}
