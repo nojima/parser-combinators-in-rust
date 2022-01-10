@@ -74,3 +74,19 @@ fn test_string() {
     assert_eq!(parser("hello world"), Some(((), " world")));
     assert_eq!(parser("hell world"), None);
 }
+
+fn map<A, B>(
+    parser: impl Parser<A>,
+    f: impl Fn(A) -> B,
+) -> impl Parser<B> {
+    generalize_lifetime(move |s| {
+        parser(s).map(|(value, rest)| (f(value), rest))
+    })
+}
+
+#[test]
+fn test_map() {
+    let parser = map(digits, |x| x + 1);
+    assert_eq!(parser("1"), Some((2, "")));
+    assert_eq!(parser("X"), None);
+}
