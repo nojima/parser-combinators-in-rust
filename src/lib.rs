@@ -15,3 +15,23 @@ fn test_digits() {
     assert_eq!(digits("hello world"), None);
     assert_eq!(digits(""),            None);
 }
+
+// 先頭の一文字が c であるときに成功して () を返すようなパーサーを返す。
+pub fn character(c: char) -> impl Fn(&str) -> Option<((), &str)> {
+    move |s| {
+        let mut chars = s.chars();
+        if chars.next() == Some(c) {
+            Some(((), chars.as_str()))
+        } else {
+            None
+        }
+    }
+}
+
+#[test]
+fn test_character() {
+    let parser = character('🍰');
+    assert_eq!(parser("🍰 yey!"), Some(((), " yey!")));
+    assert_eq!(parser("no cake"), None);
+    assert_eq!(parser(""), None);
+}
