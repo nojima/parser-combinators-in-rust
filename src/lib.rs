@@ -75,7 +75,7 @@ fn test_string() {
     assert_eq!(parser("hell world"), None);
 }
 
-fn map<A, B>(
+pub fn map<A, B>(
     parser: impl Parser<A>,
     f: impl Fn(A) -> B,
 ) -> impl Parser<B> {
@@ -89,4 +89,48 @@ fn test_map() {
     let parser = map(digits, |x| x + 1);
     assert_eq!(parser("1"), Some((2, "")));
     assert_eq!(parser("X"), None);
+}
+
+pub fn alternative<T>(
+    parser1: impl Parser<T>,
+    parser2: impl Parser<T>,
+) -> impl Parser<T> {
+    generalize_lifetime(move |s| {
+        parser1(s).or_else(|| parser2(s))
+    })
+}
+
+#[test]
+fn test_alternative() {
+    let parser = alternative(
+        digits,
+        map(string("null"), |_| 0),
+    );
+    assert_eq!(parser("1234"), Some((1234, "")));
+    assert_eq!(parser("null"), Some((0, "")));
+    assert_eq!(parser("hoge"), None);
+}
+
+#[macro_export]
+macro_rules! choice {
+    ($parser0:expr, $($parser:expr),*) => {{
+        let p = $parser0;
+        $(
+            let p = $crate::alternative(p, $parser);
+        )*
+        p
+    }};
+}
+
+#[test]
+fn test_choice() {
+    let parser = choice![
+        map(string("zero"), |_| 0),
+        map(string("one"),  |_| 1),
+        digits
+    ];
+    assert_eq!(parser("zero"), Some((0,  "")));
+    assert_eq!(parser("one"),  Some((1,  "")));
+    assert_eq!(parser("42"),   Some((42, "")));
+    assert_eq!(parser("hoge"), None);
 }
