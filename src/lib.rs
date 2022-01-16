@@ -184,3 +184,45 @@ fn test_join_macro() {
     assert_eq!(parser("10 20 30"), Some((((10, 20), 30), "")));
     assert_eq!(parser("10 20 AA"), None);
 }
+
+fn separated<T>(
+    parser: impl Parser<T>,
+    separator: impl Parser<()>,
+) -> impl Parser<Vec<T>> {
+    generalize_lifetime(move |mut s| {
+        let mut ret = vec![];
+
+        match parser(s) {
+            Some((value, rest)) => {
+                ret.push(value);
+                s = rest;
+            }
+            None => {
+                return Some((ret, s));
+            }
+        }
+
+        while let Some((_, rest)) = separator(s) {
+            s = rest;
+            match parser(s) {
+                Some((value, rest)) => {
+                    ret.push(value);
+                    s = rest;
+                }
+                None => {
+                    return None;
+                }
+            }
+        }
+
+        Some((ret, s))
+    })
+}
+
+#[test]
+fn test_separated() {
+    // カンマ区切りの数値の列のパーサー
+    let parser = separated(digits, character(','));
+    assert_eq!(parser("1,2,3"), Some((vec![1, 2, 3], "")));
+    assert_eq!(parser(""),      Some((vec![],        "")));
+}
