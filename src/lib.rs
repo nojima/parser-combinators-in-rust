@@ -91,7 +91,7 @@ fn test_map() {
     assert_eq!(parser("X"), None);
 }
 
-pub fn alternative<T>(
+pub fn choice<T>(
     parser1: impl Parser<T>,
     parser2: impl Parser<T>,
 ) -> impl Parser<T> {
@@ -101,8 +101,8 @@ pub fn alternative<T>(
 }
 
 #[test]
-fn test_alternative() {
-    let parser = alternative(
+fn test_choice() {
+    let parser = choice(
         digits,
         map(string("null"), |_| 0),
     );
@@ -116,14 +116,14 @@ macro_rules! choice {
     ($parser0:expr, $($parser:expr),*) => {{
         let p = $parser0;
         $(
-            let p = $crate::alternative(p, $parser);
+            let p = $crate::choice(p, $parser);
         )*
         p
     }};
 }
 
 #[test]
-fn test_choice() {
+fn test_choice_macro() {
     let parser = choice![
         map(string("zero"), |_| 0),
         map(string("one"),  |_| 1),
@@ -133,4 +133,54 @@ fn test_choice() {
     assert_eq!(parser("one"),  Some((1,  "")));
     assert_eq!(parser("42"),   Some((42, "")));
     assert_eq!(parser("hoge"), None);
+}
+
+fn join<A, B>(
+    parser1: impl Parser<A>,
+    parser2: impl Parser<B>,
+) -> impl Parser<(A, B)> {
+    generalize_lifetime(move |s| {
+        parser1(s).and_then(|(value1, rest1)| {
+            parser2(rest1).map(|(value2, rest2)| {
+                ((value1, value2), rest2)
+            })
+        })
+    })
+}
+
+#[test]
+fn test_join() {
+    let plus_minus = choice(
+        map(character('+'), |_| '+'),
+        map(character('-'), |_| '-'),
+    );
+    // 符号付き整数パーサー
+    let parser = join(plus_minus, digits);   
+    assert_eq!(parser("+123"), Some((('+', 123), "")));
+    assert_eq!(parser("-123"), Some((('-', 123), "")));
+    assert_eq!(parser("-abc"), None);
+    assert_eq!(parser("*123"), None);
+}
+
+#[macro_export]
+macro_rules! join {
+    ($parser0:expr, $($parser:expr),*) => {{
+        let p = $parser0;
+        $(
+            let p = $crate::join(p, $parser);
+        )*
+        p
+    }};
+}
+
+#[test]
+fn test_join_macro() {
+    // スペース区切りで数値をちょうど3つ受け付けるパーサー
+    let parser = join![
+        lexeme(digits),
+        lexeme(digits),
+        lexeme(digits)
+    ];
+    assert_eq!(parser("10 20 30"), Some((((10, 20), 30), "")));
+    assert_eq!(parser("10 20 AA"), None);
 }
