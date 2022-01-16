@@ -1,3 +1,6 @@
+use once_cell::sync::Lazy;
+use regex::Regex;
+
 // Parser<T> を Fn(&str) -> Option<(T, &str)> の別名(のようなもの)として定義する。
 pub trait Parser<T>: Fn(&str) -> Option<(T, &str)> {}
 impl<T, F> Parser<T> for F where F: Fn(&str) -> Option<(T, &str)> {}
@@ -62,7 +65,7 @@ fn test_lexeme() {
     assert_eq!(parser("    123    hello"), Some((123, "    hello")));
 }
 
-pub fn string(target: &'static str) -> impl Parser<()> {
+pub fn string<'a>(target: &'a str) -> impl Parser<()> + 'a {
     generalize_lifetime(move |s| {
         s.strip_prefix(target).map(|rest| ((), rest))
     })
@@ -225,4 +228,45 @@ fn test_separated() {
     let parser = separated(digits, character(','));
     assert_eq!(parser("1,2,3"), Some((vec![1, 2, 3], "")));
     assert_eq!(parser(""),      Some((vec![],        "")));
+}
+
+pub fn regex<'a, T>(
+    re: &'a Regex,
+    f: impl Fn(&str) -> Option<T> + 'a,
+) -> impl Parser<T> + 'a {
+    generalize_lifetime(move |s| {
+        re.find(s).and_then(|matched| {
+            f(matched.as_str()).map(|value| {
+                let rest = &s[matched.end()..];
+                (value, rest)
+            })
+        })
+    })
+}
+
+#[test]
+fn test_regex() {
+    // 識別子っぽい文字列をパース
+    const PATTERN: &str = r"^[a-zA-Z_][a-zA-Z0-9_]*";
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(PATTERN).unwrap());
+    let parser = regex(&RE, |s| Some(s.to_owned()));
+    assert_eq!(parser("x_1=0"), Some(("x_1".to_owned(), "=0")));
+    assert_eq!(parser("0_1=0"), None);
+}
+
+#[macro_export]
+macro_rules! regex {
+    ($pattern:expr, $f:expr) => {{
+        use regex::Regex;
+        use once_cell::sync::Lazy;
+        static RE: Lazy<Regex> = Lazy::new(|| Regex::new($pattern).unwrap());
+        $crate::regex(&RE, $f)
+    }};
+}
+
+#[test]
+fn test_regex_macro() {
+    let parser = regex!(r"^[a-zA-Z_][a-zA-Z0-9_]*", |s| Some(s.to_owned()));
+    assert_eq!(parser("x_1=0"), Some(("x_1".to_owned(), "=0")));
+    assert_eq!(parser("0_1=0"), None);
 }
