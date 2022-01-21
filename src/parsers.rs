@@ -6,7 +6,7 @@ impl<T, F> Parser<T> for F where F: Fn(&str) -> Option<(T, &str)> {}
 
 // クロージャの型推論を補助するための関数
 // cf. https://github.com/rust-lang/rust/issues/70263#issuecomment-623169045
-fn generalize_lifetime<T, F>(f: F) -> F
+pub fn generalize_lifetime<T, F>(f: F) -> F
 where
     F: Fn(&str) -> Option<(T, &str)>,
 {
@@ -25,10 +25,10 @@ pub fn digits(s: &str) -> Option<(i64, &str)> {
 
 #[test]
 fn test_digits() {
-    assert_eq!(digits("123"),         Some((123, "")));
-    assert_eq!(digits("123 hello"),   Some((123, " hello")));
+    assert_eq!(digits("123"), Some((123, "")));
+    assert_eq!(digits("123 hello"), Some((123, " hello")));
     assert_eq!(digits("hello world"), None);
-    assert_eq!(digits(""),            None);
+    assert_eq!(digits(""), None);
 }
 
 // 先頭の一文字が c であるときに成功して () を返すようなパーサーを返す。
@@ -53,9 +53,7 @@ fn test_character() {
 
 // パーサーを受け取って、先頭の空白を読み飛ばすようにしたパーサーを返す
 pub fn lexeme<T>(parser: impl Parser<T>) -> impl Parser<T> {
-    generalize_lifetime(move |s| {
-        parser(s.trim_start())
-    })
+    generalize_lifetime(move |s| parser(s.trim_start()))
 }
 
 #[test]
@@ -65,9 +63,7 @@ fn test_lexeme() {
 }
 
 pub fn string<'a>(target: &'a str) -> impl Parser<()> + 'a {
-    generalize_lifetime(move |s| {
-        s.strip_prefix(target).map(|rest| ((), rest))
-    })
+    generalize_lifetime(move |s| s.strip_prefix(target).map(|rest| ((), rest)))
 }
 
 #[test]
@@ -77,13 +73,8 @@ fn test_string() {
     assert_eq!(parser("hell world"), None);
 }
 
-pub fn map<A, B>(
-    parser: impl Parser<A>,
-    f: impl Fn(A) -> B,
-) -> impl Parser<B> {
-    generalize_lifetime(move |s| {
-        parser(s).map(|(value, rest)| (f(value), rest))
-    })
+pub fn map<A, B>(parser: impl Parser<A>, f: impl Fn(A) -> B) -> impl Parser<B> {
+    generalize_lifetime(move |s| parser(s).map(|(value, rest)| (f(value), rest)))
 }
 
 #[test]
@@ -93,21 +84,13 @@ fn test_map() {
     assert_eq!(parser("X"), None);
 }
 
-pub fn choice<T>(
-    parser1: impl Parser<T>,
-    parser2: impl Parser<T>,
-) -> impl Parser<T> {
-    generalize_lifetime(move |s| {
-        parser1(s).or_else(|| parser2(s))
-    })
+pub fn choice<T>(parser1: impl Parser<T>, parser2: impl Parser<T>) -> impl Parser<T> {
+    generalize_lifetime(move |s| parser1(s).or_else(|| parser2(s)))
 }
 
 #[test]
 fn test_choice() {
-    let parser = choice(
-        digits,
-        map(string("null"), |_| 0),
-    );
+    let parser = choice(digits, map(string("null"), |_| 0));
     assert_eq!(parser("1234"), Some((1234, "")));
     assert_eq!(parser("null"), Some((0, "")));
     assert_eq!(parser("hoge"), None);
@@ -128,36 +111,28 @@ macro_rules! choice {
 fn test_choice_macro() {
     let parser = choice![
         map(string("zero"), |_| 0),
-        map(string("one"),  |_| 1),
+        map(string("one"), |_| 1),
         digits
     ];
-    assert_eq!(parser("zero"), Some((0,  "")));
-    assert_eq!(parser("one"),  Some((1,  "")));
-    assert_eq!(parser("42"),   Some((42, "")));
+    assert_eq!(parser("zero"), Some((0, "")));
+    assert_eq!(parser("one"), Some((1, "")));
+    assert_eq!(parser("42"), Some((42, "")));
     assert_eq!(parser("hoge"), None);
 }
 
-pub fn join<A, B>(
-    parser1: impl Parser<A>,
-    parser2: impl Parser<B>,
-) -> impl Parser<(A, B)> {
+pub fn join<A, B>(parser1: impl Parser<A>, parser2: impl Parser<B>) -> impl Parser<(A, B)> {
     generalize_lifetime(move |s| {
         parser1(s).and_then(|(value1, rest1)| {
-            parser2(rest1).map(|(value2, rest2)| {
-                ((value1, value2), rest2)
-            })
+            parser2(rest1).map(|(value2, rest2)| ((value1, value2), rest2))
         })
     })
 }
 
 #[test]
 fn test_join() {
-    let plus_minus = choice(
-        map(character('+'), |_| '+'),
-        map(character('-'), |_| '-'),
-    );
+    let plus_minus = choice(map(character('+'), |_| '+'), map(character('-'), |_| '-'));
     // 符号付き整数パーサー
-    let parser = join(plus_minus, digits);   
+    let parser = join(plus_minus, digits);
     assert_eq!(parser("+123"), Some((('+', 123), "")));
     assert_eq!(parser("-123"), Some((('-', 123), "")));
     assert_eq!(parser("-abc"), None);
@@ -165,25 +140,33 @@ fn test_join() {
 }
 
 #[macro_export]
-macro_rules! join {
-    ($parser0:expr, $($parser:expr),*) => {{
-        let p = $parser0;
-        $(
-            let p = $crate::parsers::join(p, $parser);
-        )*
-        p
+macro_rules! join_impl {
+    ($s:expr, ($parser0:expr $(, $parser:expr)*), ($($v:expr),*)) => {{
+        if let Some((v, s)) = $parser0($s) {
+            $crate::join_impl!(s, ($($parser),*), ($($v,)* v))
+        } else {
+            None
+        }
     }};
+    ($s:expr, (), ($($v:expr),*)) => {{
+        Some((($($v),*), $s))
+    }};
+}
+
+#[macro_export]
+macro_rules! join {
+    ($($parser:expr),*) => {
+        $crate::parsers::generalize_lifetime(move|s| {
+            $crate::join_impl!(s, ($($parser),+), ())
+        })
+    };
 }
 
 #[test]
 fn test_join_macro() {
     // スペース区切りで数値をちょうど3つ受け付けるパーサー
-    let parser = join![
-        lexeme(digits),
-        lexeme(digits),
-        lexeme(digits)
-    ];
-    assert_eq!(parser("10 20 30"), Some((((10, 20), 30), "")));
+    let parser = join![lexeme(digits), lexeme(digits), lexeme(digits)];
+    assert_eq!(parser("10 20 30"), Some(((10, 20, 30), "")));
     assert_eq!(parser("10 20 AA"), None);
 }
 
@@ -202,14 +185,11 @@ pub fn many<T>(parser: impl Parser<T>) -> impl Parser<Vec<T>> {
 fn test_many() {
     let parser = many(lexeme(digits));
     assert_eq!(parser("10 20 30"), Some((vec![10, 20, 30], "")));
-    assert_eq!(parser(""),         Some((vec![], "")));
+    assert_eq!(parser(""), Some((vec![], "")));
     assert_eq!(parser("10 hello"), Some((vec![10], " hello")));
 }
 
-pub fn separated<T>(
-    parser: impl Parser<T>,
-    separator: impl Parser<()>,
-) -> impl Parser<Vec<T>> {
+pub fn separated<T>(parser: impl Parser<T>, separator: impl Parser<()>) -> impl Parser<Vec<T>> {
     generalize_lifetime(move |mut s| {
         let mut ret = vec![];
 
@@ -245,13 +225,10 @@ fn test_separated() {
     // カンマ区切りの数値の列のパーサー
     let parser = separated(digits, character(','));
     assert_eq!(parser("1,2,3"), Some((vec![1, 2, 3], "")));
-    assert_eq!(parser(""),      Some((vec![],        "")));
+    assert_eq!(parser(""), Some((vec![], "")));
 }
 
-pub fn regex<'a, T>(
-    re: &'a Regex,
-    f: impl Fn(&str) -> Option<T> + 'a,
-) -> impl Parser<T> + 'a {
+pub fn regex<'a, T>(re: &'a Regex, f: impl Fn(&str) -> Option<T> + 'a) -> impl Parser<T> + 'a {
     generalize_lifetime(move |s| {
         re.find(s).and_then(|matched| {
             f(matched.as_str()).map(|value| {
@@ -277,8 +254,8 @@ fn test_regex() {
 #[macro_export]
 macro_rules! regex {
     ($pattern:expr, $f:expr) => {{
-        use regex::Regex;
         use once_cell::sync::Lazy;
+        use regex::Regex;
         static RE: Lazy<Regex> = Lazy::new(|| Regex::new($pattern).unwrap());
         $crate::parsers::regex(&RE, $f)
     }};

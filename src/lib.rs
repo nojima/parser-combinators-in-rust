@@ -1,2 +1,2 @@
-pub mod parsers;
 pub mod examples;
+pub mod parsers;
