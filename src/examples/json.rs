@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::parsers;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -46,9 +46,7 @@ fn json_string_raw(s: &str) -> Option<(String, &str)> {
         parsers::character('"')
     ];
     let p = parsers::lexeme(p);
-    let p = parsers::map(p, |((_, chars), _)| {
-        chars.into_iter().collect()
-    });
+    let p = parsers::map(p, |(_, chars, _)| chars.into_iter().collect());
     p(s)
 }
 
@@ -68,11 +66,11 @@ fn json_character(s: &str) -> Option<(char, &str)> {
 }
 
 fn hex_code(code: &str) -> Option<char> {
-    code.strip_prefix(r"\u").and_then(|hex|
-        u32::from_str_radix(hex, 16).ok().and_then(|cp|
-            char::from_u32(cp)
-        )
-    )
+    code.strip_prefix(r"\u").and_then(|hex| {
+        u32::from_str_radix(hex, 16)
+            .ok()
+            .and_then(|cp| char::from_u32(cp))
+    })
 }
 
 fn escape(s: &str) -> Option<char> {
@@ -85,7 +83,7 @@ fn escape(s: &str) -> Option<char> {
         r#"\n"# => Some('\n'),
         r#"\r"# => Some('\r'),
         r#"\t"# => Some('\t'),
-        _ => None // undefined escape sequence
+        _ => None, // undefined escape sequence
     }
 }
 
@@ -95,7 +93,7 @@ fn array(s: &str) -> Option<(Value, &str)> {
         parsers::separated(json_value, parsers::lexeme(parsers::character(','))),
         parsers::lexeme(parsers::character(']'))
     ];
-    let p = parsers::map(p, |((_, values), _)| Value::Array(values));
+    let p = parsers::map(p, |(_, values, _)| Value::Array(values));
     p(s)
 }
 
@@ -105,7 +103,7 @@ fn object(s: &str) -> Option<(Value, &str)> {
         parsers::separated(key_value, parsers::lexeme(parsers::character(','))),
         parsers::lexeme(parsers::character('}'))
     ];
-    let p = parsers::map(p, |((_, key_values), _)| {
+    let p = parsers::map(p, |(_, key_values, _)| {
         let h = HashMap::from_iter(key_values.into_iter());
         Value::Object(h)
     });
@@ -119,20 +117,12 @@ fn key_value(s: &str) -> Option<((String, Value), &str)> {
         parsers::lexeme(parsers::character(':')),
         json_value
     ];
-    let p = parsers::map(p, |((key, _), value)| (key, value));
+    let p = parsers::map(p, |(key, _, value)| (key, value));
     p(s)
 }
 
 fn json_value(s: &str) -> Option<(Value, &str)> {
-    crate::choice![
-        null,
-        false_,
-        true_,
-        number,
-        json_string,
-        array,
-        object
-    ](s)
+    crate::choice![null, false_, true_, number, json_string, array, object](s)
 }
 
 pub fn parse(s: &str) -> Option<Value> {
