@@ -289,3 +289,16 @@ fn test_regex_macro() {
     assert_eq!(parser("x_1=0"), Some(("x_1".to_owned(), "=0")));
     assert_eq!(parser("0_1=0"), None);
 }
+
+#[test]
+fn example() {
+    // カンマ区切りの性数列を受け付けるパーサー
+    let digits_seq = separated(digits, character(','));
+    // "empty" というキーワードを受け取り、空の Vec を返すパーサー
+    let empty_keyword = map(string("empty"), |_| vec![]);
+    // カンマ区切りの整数列 または "empty" というキーワードを受け付けるパーサー
+    let parser = choice(digits_seq, empty_keyword);
+
+    assert_eq!(parser("10,20,30").unwrap().0, vec![10, 20, 30]);
+    assert_eq!(parser("empty").unwrap().0,    vec![]);
+}

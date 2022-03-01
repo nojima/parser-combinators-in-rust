@@ -12,20 +12,28 @@ pub enum Value {
     Object(HashMap<String, Value>),
 }
 
+fn lstring(target: &'static str) -> impl parsers::Parser<()> {
+    parsers::lexeme(parsers::string(target))
+}
+
+fn lcharacter(c: char) -> impl parsers::Parser<()> {
+    parsers::lexeme(parsers::character(c))
+}
+
 fn null(s: &str) -> Option<(Value, &str)> {
-    let p = parsers::lexeme(parsers::string("null"));
+    let p = lstring("null");
     let p = parsers::map(p, |_| Value::Null);
     p(s)
 }
 
 fn false_(s: &str) -> Option<(Value, &str)> {
-    let p = parsers::lexeme(parsers::string("false"));
+    let p = lstring("false");
     let p = parsers::map(p, |_| Value::False);
     p(s)
 }
 
 fn true_(s: &str) -> Option<(Value, &str)> {
-    let p = parsers::lexeme(parsers::string("true"));
+    let p = lstring("true");
     let p = parsers::map(p, |_| Value::True);
     p(s)
 }
@@ -36,6 +44,10 @@ fn number(s: &str) -> Option<(Value, &str)> {
     let p = parsers::lexeme(p);
     let p = parsers::map(p, |x| Value::Number(x));
     p(s)
+}
+
+fn json_string(s: &str) -> Option<(Value, &str)> {
+    parsers::map(json_string_raw, Value::String)(s)
 }
 
 fn json_string_raw(s: &str) -> Option<(String, &str)> {
@@ -50,10 +62,6 @@ fn json_string_raw(s: &str) -> Option<(String, &str)> {
         chars.into_iter().collect()
     });
     p(s)
-}
-
-fn json_string(s: &str) -> Option<(Value, &str)> {
-    parsers::map(json_string_raw, Value::String)(s)
 }
 
 fn json_character(s: &str) -> Option<(char, &str)> {
@@ -77,23 +85,23 @@ fn hex_code(code: &str) -> Option<char> {
 
 fn escape(s: &str) -> Option<char> {
     match s {
-        r#"\""# => Some('"'),
-        r#"\\"# => Some('\\'),
-        r#"\/"# => Some('/'),
-        r#"\b"# => Some('\x08'),
-        r#"\f"# => Some('\x0C'),
-        r#"\n"# => Some('\n'),
-        r#"\r"# => Some('\r'),
-        r#"\t"# => Some('\t'),
+        "\\\"" => Some('"'),
+        "\\\\" => Some('\\'),
+        "\\/" => Some('/'),
+        "\\b" => Some('\x08'),
+        "\\f" => Some('\x0C'),
+        "\\n" => Some('\n'),
+        "\\r" => Some('\r'),
+        "\\t" => Some('\t'),
         _ => None // undefined escape sequence
     }
 }
 
 fn array(s: &str) -> Option<(Value, &str)> {
     let p = crate::join![
-        parsers::lexeme(parsers::character('[')),
-        parsers::separated(json_value, parsers::lexeme(parsers::character(','))),
-        parsers::lexeme(parsers::character(']'))
+        lcharacter('['),
+        parsers::separated(json_value, lcharacter(',')),
+        lcharacter(']')
     ];
     let p = parsers::map(p, |((_, values), _)| Value::Array(values));
     p(s)
@@ -101,9 +109,9 @@ fn array(s: &str) -> Option<(Value, &str)> {
 
 fn object(s: &str) -> Option<(Value, &str)> {
     let p = crate::join![
-        parsers::lexeme(parsers::character('{')),
-        parsers::separated(key_value, parsers::lexeme(parsers::character(','))),
-        parsers::lexeme(parsers::character('}'))
+        lcharacter('{'),
+        parsers::separated(key_value, lcharacter(',')),
+        lcharacter('}')
     ];
     let p = parsers::map(p, |((_, key_values), _)| {
         let h = HashMap::from_iter(key_values.into_iter());
@@ -116,7 +124,7 @@ fn key_value(s: &str) -> Option<((String, Value), &str)> {
     // key_value = string ':' json_value
     let p = crate::join![
         json_string_raw,
-        parsers::lexeme(parsers::character(':')),
+        lcharacter(':'),
         json_value
     ];
     let p = parsers::map(p, |((key, _), value)| (key, value));
@@ -167,4 +175,68 @@ fn test_string() {
         json_string(r#""hello, world!!""#),
         Some((Value::String("hello, world!!".to_string()), "")),
     )
+}
+
+#[test]
+fn test_json() {
+    assert_eq!(
+        parse(r#"null"#),
+        Some(Value::Null),
+    );
+    assert_eq!(
+        parse(r#"true"#),
+        Some(Value::True),
+    );
+    assert_eq!(
+        parse(r#"false"#),
+        Some(Value::False),
+    );
+    assert_eq!(
+        parse(r#"nulll"#),
+        None,
+    );
+    assert_eq!(
+        parse(r#"nnull"#),
+        None,
+    );
+
+    assert_eq!(
+        parse(r#"0"#),
+        Some(Value::Number(0.0)),
+    );
+    assert_eq!(
+        parse(r#"3.14"#),
+        Some(Value::Number(3.14)),
+    );
+    assert_eq!(
+        parse(r#"-3.14"#),
+        Some(Value::Number(-3.14)),
+    );
+
+    assert_eq!(
+        parse(r#"  "Hello World!!"  "#),
+        Some(Value::String("Hello World!!".to_owned())),
+    );
+    assert_eq!(
+        parse(r#"  "Hello\nWorld\r\n"  "#),
+        Some(Value::String("Hello\nWorld\r\n".to_owned())),
+    );
+    assert_eq!(
+        parse(r#"  "Hello\x"  "#),
+        None,
+    );
+
+    
+    assert_eq!(
+        parse(r#"  []  "#),
+        Some(Value::Array(vec![])),
+    );
+    assert_eq!(
+        parse(r#"  [1, "hello"]  "#),
+        Some(Value::Array(vec![Value::Number(1.0), Value::String("hello".to_owned())])),
+    );
+    assert_eq!(
+        parse(r#"  [1, "hello",]  "#),
+        None,
+    );
 }
