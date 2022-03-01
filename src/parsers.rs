@@ -1,4 +1,3 @@
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 // Parser<T> を Fn(&str) -> Option<(T, &str)> の別名(のようなもの)として定義する。
@@ -265,6 +264,8 @@ pub fn regex<'a, T>(
 
 #[test]
 fn test_regex() {
+    use once_cell::sync::Lazy;
+
     // 識別子っぽい文字列をパース
     const PATTERN: &str = r"^[a-zA-Z_][a-zA-Z0-9_]*";
     static RE: Lazy<Regex> = Lazy::new(|| Regex::new(PATTERN).unwrap());
